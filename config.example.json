@@ -28,13 +28,17 @@
     {"key": "gpu-box", "name": "gpu-box", "profile": "discrete", "badge": "UBUNTU · BOX",
      "user": "me", "host": "gpu-box.example.lan", "ssh_key": "~/.ssh/id_ed25519",
      "list_containers": true,
-     "containers": {"vllm-main": {"label": "My 32B model", "port": 8010, "gpus": "GPU 0+1"}}}
+     "containers": {"vllm-main": {"label": "My 32B model", "port": 8010, "gpus": "GPU 0+1"}}},
+    {"key": "strata-pc", "name": "strata-pc", "profile": "discrete", "badge": "STRATA",
+     "source": "strata", "url": "http://strata-pc.example.lan:8095"}
   ],
   "sections": [
     {"key": "cluster", "eyebrow": "Spark cluster", "title": "Spark cluster", "subtitle": "2x unified-memory nodes",
      "nodes": ["spark1", "spark2"], "switch": true, "units": ["cluster"], "models_title": "Model performance"},
     {"key": "box", "eyebrow": "GPU box", "title": "gpu-box", "subtitle": "discrete GPUs",
-     "nodes": ["gpu-box"], "units": ["box"], "models_title": "Model performance"}
+     "nodes": ["gpu-box"], "units": ["box"], "models_title": "Model performance"},
+    {"key": "strata", "eyebrow": "Strata", "title": "strata-pc", "subtitle": "consumer GPU",
+     "nodes": ["strata-pc"], "units": ["strata"], "models_title": "Model performance"}
   ],
   "switch": {
     "enabled": true,
@@ -48,7 +52,9 @@
     {"key": "main-model", "label": "my-model · TP=2", "unit": "cluster", "node": "spark1",
      "endpoint": "http://spark1.example.lan:8000", "port": 8000, "gpus": "Spark 1 + Spark 2", "model": "my-model"},
     {"key": "box-32b", "label": "My 32B model", "unit": "box", "node": "gpu-box",
-     "endpoint": "http://gpu-box.example.lan:8010", "port": 8010, "gpus": "GPU 0+1"}
+     "endpoint": "http://gpu-box.example.lan:8010", "port": 8010, "gpus": "GPU 0+1"},
+    {"key": "strata", "label": "Qwen3.8-Flash-Next · Strata", "unit": "strata", "node": "strata-pc",
+     "endpoint": "http://strata-pc.example.lan:8095", "gpus": "GPU 0"}
   ],
   "comfy_title": "Render lanes · ComfyUI",
   "comfy_lanes": [
