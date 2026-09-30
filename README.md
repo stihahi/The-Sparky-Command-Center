@@ -7,6 +7,7 @@ It watches:
 - **GPU nodes** over SSH: unified-memory boxes (DGX Spark / GB10 class) and hosts with discrete GPUs (RTX, A-series). Temperature, power, utilization, clocks, memory, fans, CPU temperature, running containers, and a temperature sparkline per GPU.
 - **A fabric switch** (MikroTik RouterOS): temperatures, fans, PSUs, uptime, and live throughput per port.
 - **Model servers** (vLLM, SGLang, llama.cpp) through their Prometheus `/metrics`: decode and prefill tok/s, TTFT, KV-cache use, running and waiting requests, and the live model id.
+- **[Strata](https://github.com/Niko1221/Strata) servers** through their JSON `/metrics`, over HTTP only: the model card (decode and prompt-reading tok/s, the last request's prompt time, running and queued) and the host card (GPU temperature, power, utilization and VRAM, plus system RAM), with no SSH to the host.
 - **ComfyUI render lanes**: up/idle/rendering, queue depth, and memory, taken from the driver (not ComfyUI's own estimate), with peak-while-rendering marks.
 - **Tokens served** per model, banked across server restarts, with a per-day count.
 - Optional extras: GPU clock caps (status plus, if you allow it, apply), links to other web apps on the host with an up/down probe, and Elgato key lights.
@@ -116,6 +117,7 @@ No other change is needed. The dashboard still adds its live-data context as the
 | `jump` | Optional. `{"user", "host", "mode": "proxy"}` uses `ssh -J`. `"mode": "nested"` runs `ssh` from the jump host itself, for LAN nodes that only trust the jump host's key. |
 | `node_id`, `rank`, `serving`, `pair` | Unified nodes: labels on the card (what the node is serving and its role). |
 | `badge`, `list_containers`, `containers` | Discrete hosts: card badge, whether to list `docker ps` names, and friendly labels per container name. |
+| `source`, `url`, `api_key` | `"source": "strata"` reads a discrete host from the Strata server at `url` (its `/metrics`) instead of SSH; `user`, `host` and `jump` are then unused. `api_key` only if that Strata server has one. |
 | `temp_warn`, `temp_hot`, `poll_interval` | Per-node overrides of `defaults`. |
 
 ### `sections[]`
@@ -130,7 +132,7 @@ MikroTik RouterOS over plain SSH (`host`, `user`, `ssh_key`), or any command you
 
 `{"key", "label", "unit", "node", "endpoint", "port", "gpus", "model", "api_key"}`:
 
-- `endpoint` is the server's base URL; `/metrics` and `/v1/models` are appended.
+- `endpoint` is the server's base URL; `/metrics` and `/v1/models` are appended. A Strata server is recognised from its `/metrics` answer; nothing else to set.
 - `node` ties the model to a host in the 3D view.
 - `model` picks the preferred alias when a server lists several.
 
@@ -197,6 +199,7 @@ Environment variables:
 ```bash
 python3 server.py                     # API on :8895
 cd web && npm run dev                 # UI on :5176, proxies /api to :8895
+python3 -m unittest discover -s tests -t .   # tests (standard library only)
 ```
 
 Useful query flags: `?nowebgl=1` shows the SVG fallback map, and `?motion=reduce` forces the reduced-motion still frame.

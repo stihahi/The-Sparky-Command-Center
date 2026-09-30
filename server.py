@@ -4,7 +4,7 @@ Agency Command Center v2
 ========================
 A read-only command center for a self-hosted AI fleet: GPU nodes (discrete cards or
 unified-memory boxes like the DGX Spark), an optional RoCE fabric switch, the model
-servers running on them (vLLM, SGLang, llama.cpp), ComfyUI render lanes, cumulative
+servers running on them (vLLM, SGLang, llama.cpp, Strata), ComfyUI render lanes, cumulative
 token usage, and a built-in chat assistant that talks to ANY OpenAI-compatible
 /v1/chat/completions endpoint (a local model, or an agent that exposes that API).
 
@@ -31,6 +31,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import strata
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VERSION = "2.0.0"
@@ -431,12 +433,32 @@ def poll_discrete(node):
     return res
 
 
+def poll_strata_node(node):
+    """A host running Strata, read from its own /metrics over HTTP instead of nvidia-smi over SSH."""
+    res = {"key": node["key"], "name": node.get("name", node["key"]), "profile": "discrete",
+           "host_label": node.get("badge") or "STRATA HOST",
+           "reachable": False, "ts": time.time(), "err": None, "gpus": []}
+    ok, body = _http_get(node["url"].rstrip("/") + "/metrics", timeout=8, headers=_auth_headers(node))
+    metrics = strata.parse_metrics(body) if ok else None
+    if metrics is None:
+        res["err"] = "no Strata /metrics"
+        return res
+    res.update(strata.node_reading(metrics), reachable=True)
+    return res
+
+
+def poll_node(node):
+    if node.get("source") == "strata":
+        return poll_strata_node(node)
+    return poll_unified(node) if node.get("profile") == "unified" else poll_discrete(node)
+
+
 def _node_loop(node, offset):
     time.sleep(offset)
     interval = float(node.get("poll_interval") or CFG["defaults"]["poll_interval"])
     while True:
         try:
-            r = poll_unified(node) if node.get("profile") == "unified" else poll_discrete(node)
+            r = poll_node(node)
         except Exception as e:  # noqa
             r = {"key": node["key"], "name": node.get("name"), "profile": node.get("profile"),
                  "reachable": False, "ts": time.time(), "err": str(e)[:140], "gpus": []}
@@ -559,6 +581,7 @@ def _switch_loop():
 # Model servers: Prometheus /metrics + /v1/models (vLLM, SGLang, llama.cpp)
 # ----------------------------------------------------------------------------
 _model_prev = {}
+_strata_prompt_progress = {}
 
 
 def _prom_parse(text):
@@ -617,6 +640,9 @@ def poll_model(m):
     if not ok or not body.strip():
         res["err"] = "down / no /metrics"
         return res
+    strata_metrics = strata.parse_metrics(body)
+    if strata_metrics is not None:
+        return _strata_model(m, res, strata_metrics)
     p = _prom_parse(body)
     now = time.time()
     prompt_tok = gen_tok = ttft_sum = ttft_cnt = None
@@ -686,6 +712,15 @@ def poll_model(m):
         res["ttft_ms"] = round(ttft_sum / ttft_cnt * 1000.0, 1)
     mid = _model_id(url, prefer=m.get("model"), timeout=6, headers=_auth_headers(m))
     res["model"] = mid or res["label"]
+    return res
+
+
+def _strata_model(m, res, metrics):
+    key = m["key"]
+    fields, _strata_prompt_progress[key] = strata.model_reading(
+        metrics, _strata_prompt_progress.get(key), time.time())
+    res.update(fields, reachable=True)
+    res["model"] = res["model"] or res["label"]
     return res
 
 
@@ -809,6 +844,9 @@ def _tok_scrape(url):
     ok, body = _http_get(url, timeout=8)
     if not ok:
         return None
+    strata_metrics = strata.parse_metrics(body)
+    if strata_metrics is not None:
+        return strata.token_counts(strata_metrics)
     prompt = gen = None
     for line in body.splitlines():
         if line.startswith("#"):
